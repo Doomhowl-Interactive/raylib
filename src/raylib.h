@@ -1172,6 +1172,9 @@ RLAPI void StartAutomationEventRecording(void);                   // Start recor
 RLAPI void StopAutomationEventRecording(void);                    // Stop recording automation events
 RLAPI void PlayAutomationEvent(AutomationEvent event);            // Play a recorded automation event
 
+// Direct animation functionallity
+RLAPI void SimulateTouchPress(int x, int y);
+
 //------------------------------------------------------------------------------------
 // Input Handling Functions (Module: core)
 //------------------------------------------------------------------------------------

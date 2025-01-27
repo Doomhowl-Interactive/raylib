@@ -116,6 +116,7 @@
 #include <string.h>                 // Required for: strrchr(), strcmp(), strlen(), memset()
 #include <time.h>                   // Required for: time() [Used in InitTimer()]
 #include <math.h>                   // Required for: tan() [Used in BeginMode3D()], atan2f() [Used in LoadVrStereoConfig()]
+#include <assert.h>                 // Required for: assert()
 
 #define RLGL_IMPLEMENTATION
 #include "rlgl.h"                   // OpenGL abstraction layer to OpenGL 1.1, 3.3+ or ES2
@@ -3129,6 +3130,32 @@ void PlayAutomationEvent(AutomationEvent event)
         TRACELOG(LOG_INFO, "AUTOMATION PLAY: Frame: %i | Event type: %i | Event parameters: %i, %i, %i", event.frame, event.type, event.params[0], event.params[1], event.params[2]);
     }
 #endif
+}
+
+void SimulateTouchPress(int x, int y)
+{
+    // === Simulate mouse emulation, yikes... ===
+    {
+        int mouse = MOUSE_BUTTON_LEFT;
+        CORE.Input.Mouse.currentButtonState[mouse] = 1;
+        CORE.Input.Mouse.currentPosition.x = (float)x;
+        CORE.Input.Mouse.currentPosition.y = (float)y;
+        CORE.Input.Mouse.cursorOnScreen = true;
+    }
+
+    // === Simulate touch events ===
+    /*
+    {
+        int i = CORE.Input.Touch.pointCount++;
+        assert(i < MAX_TOUCH_POINTS && "Touch points exceeded");
+
+        CORE.Input.Touch.currentTouchState[i] = true;
+        CORE.Input.Touch.previousTouchState[i] = true;
+        CORE.Input.Touch.position[i].x = (float)x;
+        CORE.Input.Touch.position[i].y = (float)y;
+        // CORE.Input.Touch.currentTouchState[i] = false;
+    }
+    */
 }
 
 //----------------------------------------------------------------------------------
