@@ -296,7 +296,7 @@ void android_main(struct android_app *app)
     }
 }
 
-// NOTE: Add this to header (if apps really need it)
+// Get native android activity instance
 struct android_app *GetAndroidApp(void)
 {
     return platform.app;

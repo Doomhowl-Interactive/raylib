@@ -1100,6 +1100,9 @@ RLAPI void TakeScreenshot(const char *fileName);                  // Takes a scr
 RLAPI void SetConfigFlags(unsigned int flags);                    // Setup init configuration flags (view FLAGS)
 RLAPI void OpenURL(const char *url);                              // Open URL with default system browser (if available)
 
+struct android_app;
+RLAPI struct android_app *GetAndroidApp(void);                    // Get native android activity instance
+
 // NOTE: Following functions implemented in module [utils]
 //------------------------------------------------------------------
 RLAPI void TraceLog(int logLevel, const char *text, ...);         // Show trace log messages (LOG_DEBUG, LOG_INFO, LOG_WARNING, LOG_ERROR...)
