@@ -1562,6 +1562,9 @@ RLAPI void DrawGrid(int slices, float spacing);                                 
 //------------------------------------------------------------------------------------
 
 // Model management functions
+typedef void (*BeforeUploadModelMeshesHook)(Model* model);
+
+RLAPI Model LoadModelEx(const char* fileName, BeforeUploadModelMeshesHook beforeHook);
 RLAPI Model LoadModel(const char *fileName);                                                // Load model from files (meshes and materials)
 RLAPI Model LoadModelFromMesh(Mesh mesh);                                                   // Load model from generated mesh (default material)
 RLAPI bool IsModelValid(Model model);                                                       // Check if a model is valid (loaded in GPU, VAO/VBOs)

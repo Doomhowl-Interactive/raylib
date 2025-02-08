@@ -1090,6 +1090,12 @@ void DrawGrid(int slices, float spacing)
 // Load model from files (mesh and material)
 Model LoadModel(const char *fileName)
 {
+    return LoadModelEx(fileName, NULL);
+}
+
+// Load model from files (mesh and material)
+Model LoadModelEx(const char *fileName, BeforeUploadModelMeshesHook beforeHook)
+{
     Model model = { 0 };
 
 #if defined(SUPPORT_FILEFORMAT_OBJ)
@@ -1110,6 +1116,11 @@ Model LoadModel(const char *fileName)
 
     // Make sure model transform is set to identity matrix!
     model.transform = MatrixIdentity();
+
+    if (beforeHook)
+    {
+        beforeHook(&model);
+    }
 
     if ((model.meshCount != 0) && (model.meshes != NULL))
     {
@@ -4438,7 +4449,7 @@ static Model LoadOBJ(const char *fileName)
     tinyobj_shapes_free(objShapes, objShapeCount);
     tinyobj_materials_free(objMaterials, objMaterialCount);
 
-    for (int i = 0; i < model.meshCount; i++) UploadMesh(model.meshes + i, true);
+    //for (int i = 0; i < model.meshCount; i++) UploadMesh(model.meshes + i, true);
 
     // Restore current working directory
     if (CHDIR(currentDir) != 0)
