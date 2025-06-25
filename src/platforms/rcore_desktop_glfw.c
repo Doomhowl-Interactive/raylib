@@ -1,6 +1,6 @@
 /**********************************************************************************************
 *
-*   rcore_desktop - Functions to manage window, graphics device and inputs
+*   rcore_desktop_glfw - Functions to manage window, graphics device and inputs
 *
 *   PLATFORM: DESKTOP: GLFW
 *       - Windows (Win32, Win64)
@@ -86,6 +86,8 @@
     #include "GLFW/glfw3native.h"       // Required for: glfwGetCocoaWindow()
 #endif
 
+#include <stddef.h>  // Required for: size_t
+
 //----------------------------------------------------------------------------------
 // Types and Structures Definition
 //----------------------------------------------------------------------------------
@@ -126,6 +128,11 @@ static void MouseCursorPosCallback(GLFWwindow *window, double x, double y);     
 static void MouseScrollCallback(GLFWwindow *window, double xoffset, double yoffset);       // GLFW3 Scrolling Callback, runs on mouse wheel
 static void CursorEnterCallback(GLFWwindow *window, int enter);                            // GLFW3 Cursor Enter Callback, cursor enters client area
 static void JoystickCallback(int jid, int event);                                           // GLFW3 Joystick Connected/Disconnected Callback
+
+// Wrappers used by glfwInitAllocator
+static void *AllocateWrapper(size_t size, void *user);                                     // GLFW3 GLFWallocatefun, wrapps around RL_MALLOC macro
+static void *ReallocateWrapper(void *block, size_t size, void *user);                      // GLFW3 GLFWreallocatefun, wrapps around RL_MALLOC macro
+static void DeallocateWrapper(void *block, void *user);                                    // GLFW3 GLFWdeallocatefun, wraps around RL_FREE macro
 
 //----------------------------------------------------------------------------------
 // Module Functions Declaration
@@ -285,7 +292,7 @@ void MinimizeWindow(void)
     glfwIconifyWindow(platform.handle);
 }
 
-// Set window state: not minimized/maximized
+// Restore window from being minimized/maximized
 void RestoreWindow(void)
 {
     if (glfwGetWindowAttrib(platform.handle, GLFW_RESIZABLE) == GLFW_TRUE)
@@ -300,6 +307,8 @@ void RestoreWindow(void)
 // Set window configuration state using flags
 void SetWindowState(unsigned int flags)
 {
+    if (!CORE.Window.ready) TRACELOG(LOG_WARNING, "WINDOW: SetWindowState does nothing before window initialization, Use \"SetConfigFlags\" instead");
+
     // Check previous state and requested state to apply required changes
     // NOTE: In most cases the functions already change the flags internally
 
@@ -567,7 +576,7 @@ void SetWindowIcons(Image *images, int count)
     else
     {
         int valid = 0;
-        GLFWimage *icons = RL_CALLOC(count, sizeof(GLFWimage));
+        GLFWimage *icons = (GLFWimage *)RL_CALLOC(count, sizeof(GLFWimage));
 
         for (int i = 0; i < count; i++)
         {
@@ -729,7 +738,7 @@ int GetMonitorCount(void)
     return monitorCount;
 }
 
-// Get number of monitors
+// Get current monitor where window is placed
 int GetCurrentMonitor(void)
 {
     int index = 0;
@@ -1229,7 +1238,7 @@ void PollInputEvents(void)
                 }
             }
 
-            // Get current axis state
+            // Get current state of axes
             const float *axes = state.axes;
 
             for (int k = 0; (axes != NULL) && (k < GLFW_GAMEPAD_AXIS_LAST + 1); k++)
@@ -1237,9 +1246,19 @@ void PollInputEvents(void)
                 CORE.Input.Gamepad.axisState[i][k] = axes[k];
             }
 
-            // Register buttons for 2nd triggers (because GLFW doesn't count these as buttons but rather axis)
-            CORE.Input.Gamepad.currentButtonState[i][GAMEPAD_BUTTON_LEFT_TRIGGER_2] = (char)(CORE.Input.Gamepad.axisState[i][GAMEPAD_AXIS_LEFT_TRIGGER] > 0.1f);
-            CORE.Input.Gamepad.currentButtonState[i][GAMEPAD_BUTTON_RIGHT_TRIGGER_2] = (char)(CORE.Input.Gamepad.axisState[i][GAMEPAD_AXIS_RIGHT_TRIGGER] > 0.1f);
+            // Register buttons for 2nd triggers (because GLFW doesn't count these as buttons but rather as axes)
+            if (CORE.Input.Gamepad.axisState[i][GAMEPAD_AXIS_LEFT_TRIGGER] > 0.1f)
+            {
+                CORE.Input.Gamepad.currentButtonState[i][GAMEPAD_BUTTON_LEFT_TRIGGER_2] = 1;
+                CORE.Input.Gamepad.lastButtonPressed = GAMEPAD_BUTTON_LEFT_TRIGGER_2;
+            }
+            else CORE.Input.Gamepad.currentButtonState[i][GAMEPAD_BUTTON_LEFT_TRIGGER_2] = 0;
+            if (CORE.Input.Gamepad.axisState[i][GAMEPAD_AXIS_RIGHT_TRIGGER] > 0.1f)
+            {
+                CORE.Input.Gamepad.currentButtonState[i][GAMEPAD_BUTTON_RIGHT_TRIGGER_2] = 1;
+                CORE.Input.Gamepad.lastButtonPressed = GAMEPAD_BUTTON_RIGHT_TRIGGER_2;
+            }
+            else CORE.Input.Gamepad.currentButtonState[i][GAMEPAD_BUTTON_RIGHT_TRIGGER_2] = 0;
 
             CORE.Input.Gamepad.axisCount[i] = GLFW_GAMEPAD_AXIS_LAST + 1;
         }
@@ -1277,21 +1296,39 @@ static void SetDimensionsFromMonitor(GLFWmonitor *monitor)
   if (CORE.Window.screen.height == 0) CORE.Window.screen.height = CORE.Window.display.height;
 }
 
+// Function wrappers around RL_*alloc macros, used by glfwInitAllocator() inside of InitPlatform()
+// We need to provide these because GLFWallocator expects function pointers with specific signatures.
+// Similar wrappers exist in utils.c but we cannot reuse them here due to declaration mismatch.
+// https://www.glfw.org/docs/latest/intro_guide.html#init_allocator
+static void *AllocateWrapper(size_t size, void *user)
+{
+    (void)user;
+    return RL_MALLOC(size);
+}
+static void *ReallocateWrapper(void *block, size_t size, void *user)
+{
+    (void)user;
+    return RL_REALLOC(block, size);
+}
+static void DeallocateWrapper(void *block, void *user)
+{
+    (void)user;
+    RL_FREE(block);
+}
+
 // Initialize platform: graphics, inputs and more
 int InitPlatform(void)
 {
     glfwSetErrorCallback(ErrorCallback);
-/*
-    // TODO: Setup GLFW custom allocators to match raylib ones
+
     const GLFWallocator allocator = {
-        .allocate = MemAlloc,
-        .deallocate = MemFree,
-        .reallocate = MemRealloc,
-        .user = NULL
+        .allocate = AllocateWrapper,
+        .deallocate = DeallocateWrapper,
+        .reallocate = ReallocateWrapper,
+        .user = NULL, // RL_*ALLOC macros are not capable of handling user-provided data
     };
 
     glfwInitAllocator(&allocator);
-*/
 
 #if defined(__APPLE__)
     glfwInitHint(GLFW_COCOA_CHDIR_RESOURCES, GLFW_FALSE);
@@ -1345,6 +1382,12 @@ int InitPlatform(void)
     if ((CORE.Window.flags & FLAG_WINDOW_TRANSPARENT) > 0) glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_TRUE);     // Transparent framebuffer
     else glfwWindowHint(GLFW_TRANSPARENT_FRAMEBUFFER, GLFW_FALSE);  // Opaque framebuffer
 
+    // HACK: Most of this was written before GLFW_SCALE_FRAMEBUFFER existed and
+    // was enabled by default. Disabling it gets back the old behavior. A
+    // complete fix will require removing a lot of CORE.Window.render
+    // manipulation code.
+    glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_FALSE);
+
     if ((CORE.Window.flags & FLAG_WINDOW_HIGHDPI) > 0)
     {
         // Resize window content area based on the monitor content scale.
@@ -1352,7 +1395,7 @@ int InitPlatform(void)
         // On platforms like macOS the resolution of the framebuffer is changed independently of the window size.
         glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_TRUE);   // Scale content area based on the monitor content scale where window is placed on
 #if defined(__APPLE__)
-        glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
+        glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
 #endif
     }
     else glfwWindowHint(GLFW_SCALE_TO_MONITOR, GLFW_FALSE);
@@ -1487,6 +1530,12 @@ int InitPlatform(void)
         SetupFramebuffer(CORE.Window.display.width, CORE.Window.display.height);
 
         platform.handle = glfwCreateWindow(CORE.Window.display.width, CORE.Window.display.height, (CORE.Window.title != 0)? CORE.Window.title : " ", monitor, NULL);
+        if (!platform.handle)
+        {
+            glfwTerminate();
+            TRACELOG(LOG_WARNING, "GLFW: Failed to initialize Window");
+            return -1;
+        }
 
         // NOTE: Full-screen change, not working properly...
         //glfwSetWindowMonitor(platform.handle, glfwGetPrimaryMonitor(), 0, 0, CORE.Window.screen.width, CORE.Window.screen.height, GLFW_DONT_CARE);
@@ -1501,6 +1550,12 @@ int InitPlatform(void)
         int creationHeight = CORE.Window.screen.height != 0 ? CORE.Window.screen.height : 1;
 
         platform.handle = glfwCreateWindow(creationWidth, creationHeight, (CORE.Window.title != 0)? CORE.Window.title : " ", NULL, NULL);
+        if (!platform.handle)
+        {
+            glfwTerminate();
+            TRACELOG(LOG_WARNING, "GLFW: Failed to initialize Window");
+            return -1;
+        }
 
         // After the window was created, determine the monitor that the window manager assigned.
         // Derive display sizes, and, if possible, window size in case it was zero at beginning.
@@ -1524,18 +1579,8 @@ int InitPlatform(void)
             return -1;
         }
 
-        if (platform.handle)
-        {
-            CORE.Window.render.width = CORE.Window.screen.width;
-            CORE.Window.render.height = CORE.Window.screen.height;
-        }
-    }
-
-    if (!platform.handle)
-    {
-        glfwTerminate();
-        TRACELOG(LOG_WARNING, "GLFW: Failed to initialize Window");
-        return -1;
+        CORE.Window.render.width = CORE.Window.screen.width;
+        CORE.Window.render.height = CORE.Window.screen.height;
     }
 
     glfwMakeContextCurrent(platform.handle);
@@ -1564,7 +1609,7 @@ int InitPlatform(void)
         if ((CORE.Window.flags & FLAG_WINDOW_HIGHDPI) > 0)
         {
             // NOTE: On APPLE platforms system should manage window/input scaling and also framebuffer scaling.
-            // Framebuffer scaling should be activated with: glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_TRUE);
+            // Framebuffer scaling should be activated with: glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
     #if !defined(__APPLE__)
             glfwGetFramebufferSize(platform.handle, &fbWidth, &fbHeight);
 
@@ -1652,6 +1697,8 @@ int InitPlatform(void)
     // Retrieve gamepad names
     for (int i = 0; i < MAX_GAMEPADS; i++)
     {
+        // WARNING: If glfwGetJoystickName() is longer than MAX_GAMEPAD_NAME_LENGTH,
+        // we can get a not-NULL terminated string, so, we only copy up to (MAX_GAMEPAD_NAME_LENGTH - 1)
         if (glfwJoystickPresent(i)) strncpy(CORE.Input.Gamepad.name[i], glfwGetJoystickName(i), MAX_GAMEPAD_NAME_LENGTH - 1);
     }
     //----------------------------------------------------------------------------
@@ -1705,9 +1752,13 @@ static void ErrorCallback(int error, const char *description)
 }
 
 // GLFW3 WindowSize Callback, runs when window is resizedLastFrame
-// NOTE: Window resizing not allowed by default
+// NOTE: Window resizing not enabled by default, use SetConfigFlags()
 static void WindowSizeCallback(GLFWwindow *window, int width, int height)
 {
+    // WARNING: On window minimization, callback is called,
+    // but we don't want to change internal screen values, it breaks things
+    if ((width == 0) || (height == 0)) return;
+
     // Reset viewport and projection matrix for new size
     SetupViewport(width, height);
 
@@ -1717,12 +1768,22 @@ static void WindowSizeCallback(GLFWwindow *window, int width, int height)
 
     if (IsWindowFullscreen()) return;
 
-    // Set current screen size
+    // if we are doing automatic DPI scaling, then the "screen" size is divided by the window scale
+    if (IsWindowState(FLAG_WINDOW_HIGHDPI))
+    {
+        width = (int)(width/GetWindowScaleDPI().x);
+        height = (int)(height/GetWindowScaleDPI().y);
+    }
 
+    // Set render size
+    CORE.Window.render.width = width;
+    CORE.Window.render.height = height;
+
+    // Set current screen size
     CORE.Window.screen.width = width;
     CORE.Window.screen.height = height;
 
-    // NOTE: Postprocessing texture is not scaled to new size
+    // WARNING: If using a render texture, it is not scaled to new size
 }
 static void WindowPosCallback(GLFWwindow* window, int x, int y)
 {
@@ -1915,6 +1976,9 @@ static void JoystickCallback(int jid, int event)
 {
     if (event == GLFW_CONNECTED)
     {
+        // WARNING: If glfwGetJoystickName() is longer than MAX_GAMEPAD_NAME_LENGTH,
+        // we can get a not-NULL terminated string, so, we clean destination and only copy up to -1
+        memset(CORE.Input.Gamepad.name[jid], 0, MAX_GAMEPAD_NAME_LENGTH);
         strncpy(CORE.Input.Gamepad.name[jid], glfwGetJoystickName(jid), MAX_GAMEPAD_NAME_LENGTH - 1);
     }
     else if (event == GLFW_DISCONNECTED)

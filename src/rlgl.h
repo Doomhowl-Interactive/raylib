@@ -56,8 +56,8 @@
 *
 *       #define RL_MAX_MATRIX_STACK_SIZE             32    // Maximum size of internal Matrix stack
 *       #define RL_MAX_SHADER_LOCATIONS              32    // Maximum number of shader locations supported
-*       #define RL_CULL_DISTANCE_NEAR              0.01    // Default projection matrix near cull distance
-*       #define RL_CULL_DISTANCE_FAR             1000.0    // Default projection matrix far cull distance
+*       #define RL_CULL_DISTANCE_NEAR              0.05    // Default projection matrix near cull distance
+*       #define RL_CULL_DISTANCE_FAR             4000.0    // Default projection matrix far cull distance
 *
 *       When loading a shader, the following vertex attributes and uniform
 *       location names are tried to be set automatically:
@@ -234,10 +234,10 @@
 
 // Projection matrix culling
 #ifndef RL_CULL_DISTANCE_NEAR
-    #define RL_CULL_DISTANCE_NEAR                 0.01      // Default near cull distance
+    #define RL_CULL_DISTANCE_NEAR                 0.05      // Default near cull distance
 #endif
 #ifndef RL_CULL_DISTANCE_FAR
-    #define RL_CULL_DISTANCE_FAR                1000.0      // Default far cull distance
+    #define RL_CULL_DISTANCE_FAR                4000.0      // Default far cull distance
 #endif
 
 // Texture parameters (equivalent to OpenGL defines)
@@ -1748,7 +1748,6 @@ void rlTextureParameters(unsigned int id, int param, int value)
 #endif
             }
             else glTexParameteri(GL_TEXTURE_2D, param, value);
-
         } break;
         case RL_TEXTURE_MAG_FILTER:
         case RL_TEXTURE_MIN_FILTER: glTexParameteri(GL_TEXTURE_2D, param, value); break;
@@ -1793,7 +1792,6 @@ void rlCubemapParameters(unsigned int id, int param, int value)
                 else TRACELOG(RL_LOG_WARNING, "GL: Clamp mirror wrap mode not supported (GL_MIRROR_CLAMP_EXT)");
             }
             else glTexParameteri(GL_TEXTURE_CUBE_MAP, param, value);
-
         } break;
         case RL_TEXTURE_MAG_FILTER:
         case RL_TEXTURE_MIN_FILTER: glTexParameteri(GL_TEXTURE_CUBE_MAP, param, value); break;
@@ -2112,14 +2110,12 @@ void rlSetBlendMode(int mode)
             {
                 // NOTE: Using GL blend src/dst factors and GL equation configured with rlSetBlendFactors()
                 glBlendFunc(RLGL.State.glBlendSrcFactor, RLGL.State.glBlendDstFactor); glBlendEquation(RLGL.State.glBlendEquation);
-
             } break;
             case RL_BLEND_CUSTOM_SEPARATE:
             {
                 // NOTE: Using GL blend src/dst factors and GL equation configured with rlSetBlendFactorsSeparate()
                 glBlendFuncSeparate(RLGL.State.glBlendSrcFactorRGB, RLGL.State.glBlendDestFactorRGB, RLGL.State.glBlendSrcFactorAlpha, RLGL.State.glBlendDestFactorAlpha);
                 glBlendEquationSeparate(RLGL.State.glBlendEquationRGB, RLGL.State.glBlendEquationAlpha);
-
             } break;
             default: break;
         }
@@ -2429,7 +2425,7 @@ void rlLoadExtensions(void *loader)
 
     // Get supported extensions list
     GLint numExt = 0;
-    const char **extList = RL_MALLOC(512*sizeof(const char *)); // Allocate 512 strings pointers (2 KB)
+    const char **extList = (const char **)RL_MALLOC(512*sizeof(const char *)); // Allocate 512 strings pointers (2 KB)
     const char *extensions = (const char *)glGetString(GL_EXTENSIONS);  // One big const string
 
     // NOTE: We have to duplicate string because glGetString() returns a const string
@@ -2526,11 +2522,11 @@ void rlLoadExtensions(void *loader)
 
         // Check depth texture support
         if (strcmp(extList[i], (const char *)"GL_OES_depth_texture") == 0) RLGL.ExtSupported.texDepth = true;
-        if (strcmp(extList[i], (const char *)"GL_WEBGL_depth_texture") == 0) RLGL.ExtSupported.texDepthWebGL = true;    // WebGL requires unsized internal format
+        if (strcmp(extList[i], (const char *)"GL_WEBGL_depth_texture") == 0) RLGL.ExtSupported.texDepthWebGL = true; // WebGL requires unsized internal format
         if (RLGL.ExtSupported.texDepthWebGL) RLGL.ExtSupported.texDepth = true;
 
-        if (strcmp(extList[i], (const char *)"GL_OES_depth24") == 0) RLGL.ExtSupported.maxDepthBits = 24;   // Not available on WebGL
-        if (strcmp(extList[i], (const char *)"GL_OES_depth32") == 0) RLGL.ExtSupported.maxDepthBits = 32;   // Not available on WebGL
+        if (strcmp(extList[i], (const char *)"GL_OES_depth24") == 0) RLGL.ExtSupported.maxDepthBits = 24; // Not available on WebGL
+        if (strcmp(extList[i], (const char *)"GL_OES_depth32") == 0) RLGL.ExtSupported.maxDepthBits = 32; // Not available on WebGL
 
         // Check texture compression support: DXT
         if ((strcmp(extList[i], (const char *)"GL_EXT_texture_compression_s3tc") == 0) ||
@@ -3055,7 +3051,7 @@ void rlDrawRenderBatch(rlRenderBatch *batch)
 
             for (int i = 0, vertexOffset = 0; i < batch->drawCounter; i++)
             {
-                // Bind current draw call texture, activated as GL_TEXTURE0 and Bound to sampler2D texture0 by default
+                // Bind current draw call texture, activated as GL_TEXTURE0 and bound to sampler2D texture0 by default
                 glBindTexture(GL_TEXTURE_2D, batch->draws[i].textureId);
 
                 if ((batch->draws[i].mode == RL_LINES) || (batch->draws[i].mode == RL_TRIANGLES)) glDrawArrays(batch->draws[i].mode, vertexOffset, batch->draws[i].vertexCount);
@@ -3311,7 +3307,7 @@ unsigned int rlLoadTexture(const void *data, int width, int height, int format, 
         // Activate Trilinear filtering if mipmaps are available
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipmapCount);      //  user defined mip count would break without this.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, mipmapCount); // Required for user-defined mip count
     }
 #endif
 
@@ -3684,12 +3680,12 @@ unsigned char *rlReadScreenPixels(int width, int height)
 
     // Flip image vertically!
     // NOTE: Alpha value has already been applied to RGB in framebuffer, we don't need it!
-    for (int y = height - 1; y >= height / 2; y--)
+    for (int y = height - 1; y >= height/2; y--)
     {
         for (int x = 0; x < (width*4); x += 4)
         {
-            size_t s = ((height - 1) - y)*width*4 + x;
-            size_t e = y*width*4 + x;
+            unsigned int s = ((height - 1) - y)*width*4 + x;
+            unsigned int e = y*width*4 + x;
 
             unsigned char r = imgData[s];
             unsigned char g = imgData[s+1];
@@ -3747,19 +3743,16 @@ void rlFramebufferAttach(unsigned int fboId, unsigned int texId, int attachType,
             if (texType == RL_ATTACHMENT_TEXTURE2D) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + attachType, GL_TEXTURE_2D, texId, mipLevel);
             else if (texType == RL_ATTACHMENT_RENDERBUFFER) glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + attachType, GL_RENDERBUFFER, texId);
             else if (texType >= RL_ATTACHMENT_CUBEMAP_POSITIVE_X) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + attachType, GL_TEXTURE_CUBE_MAP_POSITIVE_X + texType, texId, mipLevel);
-
         } break;
         case RL_ATTACHMENT_DEPTH:
         {
             if (texType == RL_ATTACHMENT_TEXTURE2D) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, texId, mipLevel);
             else if (texType == RL_ATTACHMENT_RENDERBUFFER)  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, texId);
-
         } break;
         case RL_ATTACHMENT_STENCIL:
         {
             if (texType == RL_ATTACHMENT_TEXTURE2D) glFramebufferTexture2D(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_TEXTURE_2D, texId, mipLevel);
             else if (texType == RL_ATTACHMENT_RENDERBUFFER)  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, texId);
-
         } break;
         default: break;
     }
@@ -4185,6 +4178,9 @@ unsigned int rlCompileShader(const char *shaderCode, int type)
             RL_FREE(log);
         }
 
+        // Unload object allocated by glCreateShader(), 
+        // despite failing in the compilation process
+        glDeleteShader(shader);
         shader = 0;
     }
     else
